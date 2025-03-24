@@ -9,6 +9,7 @@
 
 #define TASK_QUEUE_NAME "/task_queue_%d"
 #define RESULT_QUEUE_NAME "/result_queue_%d_%d"
+#define TASK_PER_WORKER 5
 
 typedef struct {
     float num1;
@@ -47,12 +48,17 @@ void server(int n_workers) {
 
     srand(time(NULL));
     int numer_of_tasks = 0;
-    while (numer_of_tasks < n_workers) {
+    int total_tasks = 5 * n_workers;
+    //while (numer_of_tasks < n_workers) {
+    for(int i=0; i<total_tasks; i++)
+    {
         Task task = {get_random_float(0.0, 100.0), get_random_float(0.0, 100.0)};
         if (mq_send(task_queue, (char*)&task, sizeof(Task), 0) == -1) {
-            perror("mq_send (server)");
+            //perror("mq_send (server)");
+            printf("Queue is full!\n");
+        }else{
+            printf("New task queued: %.2f + %.2f\n", task.num1, task.num2);
         }
-        printf("New task: %.2f + %.2f\n", task.num1, task.num2);
         usleep(get_random_time(100000, 500000)); 
         numer_of_tasks++;
     }
@@ -66,10 +72,10 @@ void server(int n_workers) {
 
 void worker(int worker_id) {
     char task_queue_name[256];
-    char result_queue_name[256];
+    //char result_queue_name[256];
 
     sprintf(task_queue_name, TASK_QUEUE_NAME, getppid());
-    sprintf(result_queue_name, RESULT_QUEUE_NAME, getppid(), worker_id);
+    //sprintf(result_queue_name, RESULT_QUEUE_NAME, getppid(), worker_id);
 
     struct mq_attr result_queue_attr = {0, 10, sizeof(float), 0};
     mqd_t task_queue = mq_open(task_queue_name, O_RDONLY);
@@ -78,28 +84,30 @@ void worker(int worker_id) {
         exit(EXIT_FAILURE);
     }
 
-    mqd_t result_queue = mq_open(result_queue_name, O_CREAT | O_WRONLY, 0644, &result_queue_attr);
-    if (result_queue == -1) {
-        perror("mq_open (worker result)");
-        exit(EXIT_FAILURE);
-    }
+    // mqd_t result_queue = mq_open(result_queue_name, O_CREAT | O_WRONLY, 0644, &result_queue_attr);
+    // if (result_queue == -1) {
+    //     perror("mq_open (worker result)");
+    //     exit(EXIT_FAILURE);
+    // }
 
     printf("[%d] Worker ready!\n", getpid());
 
     Task task;
-    if (mq_receive(task_queue, (char*)&task, sizeof(Task), NULL) > 0) {
-        float result = task.num1 + task.num2;
-        usleep(get_random_time(500000, 2000000));
+    for(int i=0; i<TASK_PER_WORKER; i++){
+        if (mq_receive(task_queue, (char*)&task, sizeof(Task), NULL) > 0) {
+            float result = task.num1 + task.num2;
+            usleep(get_random_time(500000, 2000000));
 
-        if (mq_send(result_queue, (char*)&result, sizeof(float), 0) == -1) {
-            perror("mq_send (worker result)");
+            //if (mq_send(result_queue, (char*)&result, sizeof(float), 0) == -1) {
+            //    perror("mq_send (worker result)");
+            //}
+            printf("[%d] Task %.2f + %.2f = %.2f\n", getpid(), task.num1, task.num2, result);
         }
-        printf("[%d] Task %.2f + %.2f = %.2f\n", getpid(), task.num1, task.num2, result);
     }
 
     printf("[%d] Exits!\n", getpid());
     mq_close(task_queue);
-    mq_close(result_queue);
+    //mq_close(result_queue);
 }
 
 int main(int argc, char *argv[]) {
